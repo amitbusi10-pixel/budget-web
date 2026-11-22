@@ -9,7 +9,7 @@
   const SCOPE = 'https://www.googleapis.com/auth/drive.file';
   const FOLDER = 'תקציב שנתי', BK_FOLDER = 'גיבויים', DATA = 'budget.json', LATEST = 'budget-latest.json';
   const API = 'https://www.googleapis.com/drive/v3', UP = 'https://www.googleapis.com/upload/drive/v3';
-  const BACKUP_EVERY = 6 * 3600 * 1000, POLL = 30000;
+  const POLL = 30000;
 
   /* ---------- storage helpers ---------- */
   const idb = (() => {
@@ -145,14 +145,46 @@
     } catch (_) { return false; }
   }
 
-  // Writes a backup copy into Drive (and the folder on this computer, if chosen). Never deleted automatically.
+  // Backups: ONE file per day (budget-YYYY-MM-DD.json, overwritten during the day), plus a separate file
+  // before an import/restore/monthly update or on a conflict between devices (budget-<time>-<tag>.json).
+  // Saving does not create backups (Drive itself keeps the recent versions of budget.json).
+  const today = () => stamp().slice(0, 10);
   async function backupText(text, tag) {
     await setupFolders();
-    const name = `budget-${stamp()}${tag ? '-' + tag : ''}.json`;
-    await upload({ name, parents: [bkId] }, text);
+    const name = tag ? `budget-${stamp()}-${tag}.json` : `budget-${today()}.json`;
+    const same = tag ? null : await findOne(name, bkId);
+    await upload(same ? { name } : { name, parents: [bkId] }, text, same && same.id);
     await writeLocal(name, text);
     lastBackup = Date.now(); ls.set('budget-lastbk', String(lastBackup));
+    pruneBackups().catch(() => {});
     return name;
+  }
+  // Which backups to keep (the rest go to the Drive trash, recoverable for 30 days):
+  // every day of the last 14 days, the first backup of every older month (kept forever),
+  // and the special backups (before import / update / conflict) of the last 90 days.
+  function keepSet(names, now = new Date()) {
+    const day = n => (n.match(/^budget-(\d{4}-\d{2}-\d{2})/) || [])[1];
+    const age = d => (now - new Date(d + 'T12:00:00')) / 864e5;
+    const keep = new Set(), firstOfMonth = {};
+    for (const n of names.filter(day).sort()) { const m = day(n).slice(0, 7); if (!firstOfMonth[m]) firstOfMonth[m] = n; }
+    for (const n of names) {
+      const d = day(n); if (!d) { keep.add(n); continue; } // not ours: never touched
+      const tagged = !/^budget-\d{4}-\d{2}-\d{2}\.json$/.test(n);
+      if (age(d) <= 14 || (tagged && age(d) <= 90) || firstOfMonth[d.slice(0, 7)] === n) keep.add(n);
+    }
+    return keep;
+  }
+  async function pruneBackups() {
+    if (ls.get('bw-pruned') === today()) return; // once a day is enough
+    const j = await (await drive(`/files?q=${q(`'${bkId}' in parents and trashed=false`)}&fields=files(id,name)&pageSize=1000`)).json();
+    const files = j.files || [], keep = keepSet(files.map(f => f.name));
+    for (const f of files) if (!keep.has(f.name)) await drive(`/files/${f.id}?fields=id`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) });
+    // the folder on this computer: only the daily files this app wrote (never the old app's backups there)
+    if (await localDirOk(false)) {
+      const daily = []; for await (const [n] of dirHandle.entries()) if (/^budget-\d{4}-\d{2}-\d{2}\.json$/.test(n)) daily.push(n);
+      const k = keepSet(daily); for (const n of daily) if (!k.has(n)) await dirHandle.removeEntry(n).catch(() => {});
+    }
+    ls.set('bw-pruned', today());
   }
 
   // Push the local copy. If Drive changed since our base version (another device), keep both:
@@ -204,7 +236,9 @@
   setInterval(() => {
     if (document.visibilityState !== 'visible') return;
     if (!hasToken()) { renewWhenIdle(); return; }
-    if (pendingText != null) syncNow(); else pullIfChanged();
+    if (pendingText != null) syncNow(); else pullIfChanged().then(() => { // app left open past midnight: today's backup
+      if (fileId && stamp(new Date(lastBackup)).slice(0, 10) !== today()) download(fileId).then(t => backupText(t, null)).catch(() => {});
+    });
   }, POLL);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
@@ -272,7 +306,7 @@
     setTimeout(async () => { // first sync of this session + a backup every 6 hours
       try {
         if (pendingText != null) await syncNow();
-        if (fileId && hasToken() && Date.now() - lastBackup > BACKUP_EVERY) await backupText(await download(fileId), null);
+        if (fileId && hasToken() && stamp(new Date(lastBackup)).slice(0, 10) !== today()) await backupText(await download(fileId), null);
       } catch (_) { /* later */ }
     }, 1500);
     return out;
