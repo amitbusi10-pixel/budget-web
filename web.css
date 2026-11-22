@@ -5,6 +5,9 @@
 body { padding-bottom: env(safe-area-inset-bottom); }
 .set select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--in); color: var(--ink); margin-inline-start: 6px; }
 
+label.btnlike { display: inline-block; font: inherit; cursor: pointer; border-radius: 8px; padding: 9px 14px; margin-top: 8px; background: var(--pri); color: #fff; }
+.bklist .nm { word-break: break-all; }
+
 /* ---------- phone layout ---------- */
 body.mob { font-size: 16px; }
 body.mob header { padding: 8px 10px; gap: 6px; }

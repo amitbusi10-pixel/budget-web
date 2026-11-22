@@ -118,6 +118,13 @@
       ls.set('budget-folder', folderId);
     }
   }
+  const docIds = {};
+  async function docsFolder(ym, create) {
+    await setupFolders();
+    if (!docIds._root) { const f = await findOne('מסמכים', folderId, 'application/vnd.google-apps.folder'); if (f) docIds._root = f.id; else if (create) docIds._root = await ensureFolder('מסמכים', folderId); else return null; }
+    if (!docIds[ym]) { const f = await findOne(ym, docIds._root, 'application/vnd.google-apps.folder'); if (f) docIds[ym] = f.id; else if (create) docIds[ym] = await ensureFolder(ym, docIds._root); else return null; }
+    return docIds[ym];
+  }
   async function remoteMeta() {
     await setupFolders();
     const f = await findOne(DATA, folderId);
@@ -368,6 +375,24 @@
       } catch (e) { return e && e.name === 'AbortError' ? { canceled: true } : Object.assign(mirrorInfo(), { error: 'לא ניתן להשתמש בתיקייה: ' + e.message }); }
     },
     mirrorOff: async () => { dirHandle = null; await idb.del('bkdir'); ls.del('bw-localname'); ls.del('bw-localbk'); return mirrorInfo(); },
+    // Monthly documents: תקציב שנתי › מסמכים › YYYY-MM (the files keep their names).
+    docsList: async ym => {
+      try {
+        const id = await docsFolder(ym, false); if (!id) return { ok: true, files: [] };
+        const j = await (await drive(`/files?q=${q(`'${id}' in parents and trashed=false`)}&fields=files(id,name,size,createdTime)&orderBy=name&pageSize=200`)).json();
+        return { ok: true, files: (j.files || []).map(f => ({ id: f.id, name: f.name, size: +f.size || 0, time: Date.parse(f.createdTime) })) };
+      } catch (e) { return { ok: false, error: e instanceof NeedAuth ? 'צריך להתחבר ל-Google (כפתור "התחבר" למעלה).' : e.message === 'offline' ? 'אין חיבור לאינטרנט.' : e.message }; }
+    },
+    docsUpload: async (ym, file) => {
+      try {
+        const id = await docsFolder(ym, true), b = '-------bw' + Math.random().toString(36).slice(2);
+        const body = new Blob([`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name: file.name, parents: [id] })}\r\n--${b}\r\nContent-Type: ${file.type || 'application/octet-stream'}\r\n\r\n`, file, `\r\n--${b}--`]);
+        await drive(`${UP}/files?uploadType=multipart&fields=id`, { method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + b }, body });
+        return { ok: true };
+      } catch (e) { return { ok: false, error: e instanceof NeedAuth ? 'צריך להתחבר ל-Google' : e.message === 'offline' ? 'אין חיבור לאינטרנט' : e.message }; }
+    },
+    docsDelete: async id => { try { await drive(`/files/${id}?fields=id`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ trashed: true }) }); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; } },
+    docsGet: async id => (await drive(`/files/${id}?alt=media`)).blob(), // used by the monthly update on the PC
     mirrorDefault: async () => ({ canceled: true }),
     openMirror: async () => window.api.openDataFolder(),
     selftestDone: () => {}

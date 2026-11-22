@@ -419,6 +419,7 @@ function render() {
   const main = $('#main');
   if (!loaded) { main.innerHTML = '<section class="box">טוען…</section>'; return; }
   const nb = notice ? `<div class="banner bad" id="notice">${esc(notice)} <button class="sm" id="noticeX">הבנתי</button></div>` : '';
+  if (ui.tab === 'docs') { main.innerHTML = nb + renderDocs(); refreshDocs(); return; }
   if (!Object.keys(S.years).length && ui.tab !== 'settings') { main.innerHTML = nb + emptyView(); return; }
   if (ui.tab === 'summary') main.innerHTML = nb + renderYear();
   else if (ui.tab === 'settings') { main.innerHTML = nb + renderSettings(); if (!backups) refreshBackups(); }
@@ -426,9 +427,49 @@ function render() {
   updateTotals();
   btns();
 }
+/* ---------- documents for the monthly update (stored in Drive: תקציב שנתי › מסמכים › YYYY-MM) ---------- */
+let docMonth = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })();
+function renderDocs() {
+  const opts = []; const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1);
+  for (let i = 0; i < 15; i++) { d.setMonth(d.getMonth() - 1); const v = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); opts.push(`<option value="${v}"${v === docMonth ? ' selected' : ''}>${MN[d.getMonth()]} ${d.getFullYear()}</option>`); }
+  return `<section class="box set"><h3>📎 מסמכים לעדכון החודשי</h3>
+    <p class="muted">מעלים כאן את מסמכי החודש: תלוש, דוח אינטראקטיב, פירוטי אשראי וקובץ עו"ש. הם נשמרים ב-Google Drive שלך (בתיקייה "תקציב שנתי › מסמכים"), ובעדכון החודשי Claude לוקח אותם משם, ממלא את החודש ובודק כל מספר.</p>
+    <label class="chk">חודש: <select id="docMonth">${opts.join('')}</select></label>
+    <div class="row"><label class="pri btnlike">⬆ בחר קבצים להעלאה<input type="file" id="docFiles" multiple accept=".pdf,.xlsx,.xls,.csv,.txt,image/*" hidden></label></div>
+    <p class="muted" id="docMsg"></p>
+    <div id="doclist"><p class="muted">טוען…</p></div></section>`;
+}
+async function refreshDocs() {
+  const el = $('#doclist'); if (!el) return;
+  const r = await window.api.docsList(docMonth);
+  if (!r.ok) { el.innerHTML = `<p class="neg">${esc(r.error)}</p>`; return; }
+  el.innerHTML = r.files.length ? `<div class="bklist"><table><tbody>${r.files.map(f => `<tr><td class="nm">${esc(f.name)}</td><td>${fmtSize(f.size)}</td><td>${new Date(f.time).toLocaleDateString('he-IL')}</td><td><button class="sm" data-docdel="${esc(f.id)}" data-docname="${esc(f.name)}">מחק</button></td></tr>`).join('')}</tbody></table></div>`
+    : '<p class="muted">עדיין לא הועלו מסמכים לחודש הזה.</p>';
+}
+async function uploadDocs(files) {
+  const msg = $('#docMsg'); let ok = 0;
+  for (const [i, f] of [...files].entries()) {
+    msg.textContent = `מעלה ${i + 1} מתוך ${files.length}: ${f.name}…`;
+    const r = await window.api.docsUpload(docMonth, f);
+    if (r.ok) ok++; else { msg.textContent = `⚠ ההעלאה של ${f.name} נכשלה: ${r.error}`; await refreshDocs(); return; }
+  }
+  msg.textContent = `✓ הועלו ${ok} קבצים. כשכל המסמכים של החודש כאן, כתוב ל-Claude "העליתי".`;
+  refreshDocs();
+}
+document.addEventListener('change', e => {
+  if (e.target.id === 'docMonth') { docMonth = e.target.value; $('#docMsg').textContent = ''; refreshDocs(); }
+  if (e.target.id === 'docFiles' && e.target.files.length) { uploadDocs(e.target.files); e.target.value = ''; }
+});
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-docdel]'); if (!b) return;
+  if (!(await ask('למחוק את ' + b.dataset.docname + '? (הוא עובר לסל של Drive)', { ok: 'מחק' }))) return;
+  const r = await window.api.docsDelete(b.dataset.docdel);
+  if (!r.ok) tell('המחיקה נכשלה: ' + r.error); refreshDocs();
+});
 function renderNav() {
   let h = `<button class="${ui.tab === 'summary' ? 'on' : ''}" data-tab="summary">📊 סיכום שנתי</button>`;
   for (let k = 1; k <= 12; k++) { const has = !!(Y() && Y().months[k]); h += `<button class="${ui.tab === k ? 'on' : ''}" data-tab="${k}">${MN[k - 1]}${has ? '' : ' ∅'}</button>`; }
+  h += `<button class="${ui.tab === 'docs' ? 'on' : ''}" data-tab="docs">📎 מסמכים</button>`;
   h += `<button class="${ui.tab === 'settings' ? 'on' : ''}" data-tab="settings">⚙ הגדרות</button>`;
   $('#nav').innerHTML = h;
   $('#yr').innerHTML = Object.keys(S.years).sort().map(y => `<option value="${y}"${+y === ui.year ? ' selected' : ''}>${y}</option>`).join('');
