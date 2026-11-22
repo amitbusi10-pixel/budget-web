@@ -10,3 +10,6 @@
 *.jpeg
 *.zip
 .env
+
+!manifest.json
+!icons/*.png
