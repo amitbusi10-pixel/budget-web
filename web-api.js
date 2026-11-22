@@ -54,6 +54,19 @@
       tokenClient.requestAccessToken();
     }));
   }
+  // Fallback when the popup is blocked: full-page redirect to Google, which returns the token in the URL hash.
+  const redirectUri = () => location.origin + location.pathname;
+  function redirectSignIn() {
+    const p = new URLSearchParams({ client_id: CLIENT_ID, redirect_uri: redirectUri(), response_type: 'token', scope: SCOPE, include_granted_scopes: 'true', state: 'bw' });
+    location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + p;
+  }
+  (function takeHashToken() {
+    const h = new URLSearchParams(location.hash.slice(1));
+    if (h.get('access_token') && h.get('state') === 'bw') {
+      token = h.get('access_token'); tokenExp = Date.now() + (+h.get('expires_in') - 60) * 1000; ls.set('budget-signed', '1');
+      history.replaceState(null, '', location.pathname + location.search);
+    }
+  })();
   async function getToken(interactive) {
     if (token && Date.now() < tokenExp) return token;
     return requestToken(!!interactive);
@@ -160,6 +173,7 @@
         online = true; bar('');
         return { ok: true, time: lastSync };
       } catch (e) {
+        if (interactive && /popup/i.test(e.message)) { redirectSignIn(); return { ok: false, error: 'auth' }; }
         if (e instanceof NeedAuth || /denied|popup|timeout|access/i.test(e.message)) { bar('ההתחברות ל-Google פגה. השינויים נשמרים במכשיר, וישוחזר הסנכרון אחרי התחברות.', 'warn', reconnectBtn()); return { ok: false, error: 'auth' }; }
         online = false; bar('אין חיבור. השינויים נשמרים במכשיר ויסונכרנו כשיחזור החיבור.', 'warn'); return { ok: false, error: 'offline' };
       } finally { syncing = null; }
@@ -186,7 +200,10 @@
         <p class="muted" id="gmsg">בפעם הראשונה Google תציג אזהרה "האפליקציה לא מאומתת": לוחצים "מתקדם" ואז "המשך".</p></section>`;
       $('#gbtn').onclick = async () => {
         $('#gmsg').textContent = 'מתחבר…';
-        try { await getToken(true); res(); } catch (e) { $('#gmsg').textContent = 'ההתחברות לא הושלמה (' + e.message + '). אפשר ללחוץ שוב.'; }
+        try { await getToken(true); res(); } catch (e) {
+          if (/popup/i.test(e.message)) { $('#gmsg').textContent = 'החלון הקופץ נחסם, עובר להתחברות בדף מלא…'; redirectSignIn(); return; }
+          $('#gmsg').textContent = 'ההתחברות לא הושלמה (' + e.message + '). אפשר ללחוץ שוב.';
+        }
       };
     });
   }
@@ -203,7 +220,10 @@
     // Sign in: silently if possible, otherwise show the gate (first time / expired).
     let signedIn = false;
     if (ls.get('budget-signed')) { try { await getToken(false); signedIn = true; } catch (_) { /* gate below */ } }
-    if (!signedIn && navigator.onLine) { await gate(); signedIn = true; }
+    const hasLocal = !!(local && local.text);
+    if (!signedIn && !hasLocal && navigator.onLine) { await gate(); signedIn = true; }
+    // Data on this device: open right away; sign-in is offered in the bar instead of blocking.
+    if (!signedIn && hasLocal) bar('לא מחובר ל-Google, ההצגה מהעותק שבמכשיר. הסנכרון יתחדש אחרי התחברות.', 'warn', { label: 'התחבר', fn: () => syncNow(true).then(r => { if (r.ok) location.reload(); }) });
 
     if (signedIn) {
       try {
@@ -287,4 +307,5 @@
     selftestDone: () => {}
   };
   window.__syncNow = syncNow;
+  window.__driveOnline = () => !!token && Date.now() < tokenExp;
 })();

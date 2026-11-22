@@ -161,7 +161,7 @@ async function init() {
   mirror = r.mirror || null;
   loaded = true;
   render();
-  setStatus('מחובר ל-Google Drive ✓');
+  setStatus(window.__driveOnline && window.__driveOnline() ? 'מחובר ל-Google Drive ✓' : 'עובד מהעותק שבמכשיר');
   window.__onSyncNote = msg => { notice = msg; render(); };
   window.__onRemoteChange = async () => {
     if (await ask('הנתונים עודכנו ממכשיר אחר. לטעון את הגרסה החדשה? (השינויים שלא נשמרו כאן יישמרו בגיבוי)', { ok: 'טען' })) location.reload();

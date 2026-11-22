@@ -1,6 +1,6 @@
 /* Browser-only additions: sync bar and phone layout. */
 #syncbar { position: sticky; top: 0; z-index: 50; padding: 8px 14px; background: #fff4d6; color: #5a4300; border-bottom: 1px solid #e6c766; font-size: 14px; text-align: center; }
-#syncbar button { margin-inline-start: 8px; padding: 4px 12px; border-radius: 8px; border: 1px solid #b38b00; background: #fff; cursor: pointer; }
+#syncbar button { margin-inline-start: 8px; padding: 4px 12px; border-radius: 8px; border: 1px solid #b38b00; background: #fff; color: #5a4300; font: inherit; cursor: pointer; }
 body { padding-bottom: env(safe-area-inset-bottom); }
 header { flex-wrap: wrap; }
 @media (max-width: 700px) {
