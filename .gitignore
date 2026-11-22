@@ -1,0 +1,12 @@
+# Personal data never goes into git: budget files, documents, exports, screenshots.
+*.json
+!package.json
+*.xlsx
+*.xls
+*.csv
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.zip
+.env
