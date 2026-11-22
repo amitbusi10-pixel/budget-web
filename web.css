@@ -1,10 +1,42 @@
-/* Browser-only additions: sync bar and phone layout. */
+/* Browser-only additions: sync bar and the phone layout (body.mob, chosen in settings or by screen width). */
 #syncbar { position: sticky; top: 0; z-index: 50; padding: 8px 14px; background: #fff4d6; color: #5a4300; border-bottom: 1px solid #e6c766; font-size: 14px; text-align: center; }
 #syncbar button { margin-inline-start: 8px; padding: 4px 12px; border-radius: 8px; border: 1px solid #b38b00; background: #fff; color: #5a4300; font: inherit; cursor: pointer; }
+#status { margin-inline-start: auto; }
 body { padding-bottom: env(safe-area-inset-bottom); }
-header { flex-wrap: wrap; }
-@media (max-width: 700px) {
-  main { padding-inline: 10px; }
-  #nav { overflow-x: auto; white-space: nowrap; }
-  #status { flex-basis: 100%; }
-}
+.set select { font: inherit; padding: 5px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--in); color: var(--ink); margin-inline-start: 6px; }
+
+/* ---------- phone layout ---------- */
+body.mob { font-size: 16px; }
+body.mob header { padding: 8px 10px; gap: 6px; }
+body.mob header h1 { font-size: 16px; margin: 0; }
+body.mob header button, body.mob header select { padding: 6px 9px; }
+body.mob #hdrExport { display: none; }
+body.mob #status { flex-basis: 100%; margin: 0; font-size: 12px; }
+body.mob nav { flex-wrap: nowrap; overflow-x: auto; padding: 10px 10px 4px; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+body.mob nav::-webkit-scrollbar { display: none; }
+body.mob nav button { padding: 7px 12px; }
+body.mob main { padding: 10px 10px 90px; }
+body.mob .box { padding: 10px; border-radius: 12px; }
+body.mob .two { grid-template-columns: minmax(0, 1fr); }
+body.mob .kpis, body.mob .kpis.k8 { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+body.mob .kpi { padding: 8px 10px; }
+body.mob .kpi b { font-size: 17px; }
+body.mob .top h2 { font-size: 19px; }
+body.mob .det { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+body.mob .det input, body.mob .det .cur { width: 100%; }
+/* table rows become cards: every field with its own label, two per line */
+body.mob .hd { display: none; }
+body.mob .r { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px 10px; padding: 12px 0 10px; position: relative; }
+body.mob .r > div::before { content: attr(data-l); display: block; font-size: 12px; color: var(--mut); margin-bottom: 2px; }
+body.mob .r > div[data-l=""]::before { display: none; }
+body.mob .r input, body.mob .r select { padding: 9px 10px; font-size: 16px; }
+body.mob .r input[type=checkbox] { justify-self: start; width: 24px; height: 24px; }
+body.mob .r button.del { position: absolute; top: 6px; left: 0; font-size: 18px; padding: 4px 8px; }
+body.mob .r .cur input { padding-left: 28px; }
+body.mob button.add, body.mob button.pri, body.mob button.ghost { padding: 10px 14px; }
+body.mob .bh { flex-direction: column; align-items: flex-start; }
+body.mob table { font-size: 13px; }
+body.mob td, body.mob th { padding: 5px 4px; }
+body.mob .pbar { min-width: 40px; }
+body.mob svg { max-width: 100%; height: auto; }
+body.mob .dlg { width: calc(100vw - 32px); }

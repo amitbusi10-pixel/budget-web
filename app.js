@@ -158,18 +158,36 @@ async function init() {
   ui.year = new Date().getFullYear(); // falls back to the latest year in ensureUi()
   ensureUi();
   if (prefs.startLastMonth) { const ys = Object.keys(S.years).map(Number).sort((a, b) => a - b); if (ys.length) { ui.year = ys[ys.length - 1]; ui.tab = lastMonthTab(); } }
+  if (r.ui && S.years[r.ui.year]) { ui.year = r.ui.year; ui.tab = r.ui.tab; } // back from the Google sign-in page
   mirror = r.mirror || null;
   loaded = true;
+  applyView();
   render();
+  if (r.ui && r.ui.y) scrollTo(0, r.ui.y);
   setStatus(window.__driveOnline && window.__driveOnline() ? 'מחובר ל-Google Drive ✓' : 'עובד מהעותק שבמכשיר');
   window.__onSyncNote = msg => { notice = msg; render(); };
-  window.__onRemoteChange = async () => {
-    if (await ask('הנתונים עודכנו ממכשיר אחר. לטעון את הגרסה החדשה? (השינויים שלא נשמרו כאן יישמרו בגיבוי)', { ok: 'טען' })) location.reload();
+  // Another device saved a newer version: show it (only called when nothing here is waiting to be saved).
+  window.__applyRemote = d => {
+    if (saveT) return;
+    const a = document.activeElement; if (a && a.dataset && a.dataset.k) return; // not while typing
+    S = d; if (!S.settings) S.settings = { includeFuture: false };
+    recompute(); ensureUi(); UNDO.length = 0; REDO.length = 0; btns(); backups = null;
+    const y = scrollY; render(); scrollTo(0, y);
+    setStatus('עודכן ממכשיר אחר ✓ ' + new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' }));
   };
   if (r.selftest && window.__runSelftest) window.__runSelftest(r.selftest);
   if (r.message) { notice = r.message; render(); setStatus('⚠ בוצע שחזור מגיבוי', true); await tell(r.message); }
   if (r.info) await tell(r.info);
 }
+// Display: 'auto' (by screen width), 'pc' (full table layout, also on a phone) or 'phone' (cards, also on a PC).
+const narrow = window.matchMedia('(max-width: 760px)');
+function applyView() {
+  const v = prefs.view || 'auto';
+  const vp = document.querySelector('meta[name=viewport]');
+  if (vp) vp.content = v === 'pc' ? 'width=1200' : 'width=device-width, initial-scale=1, viewport-fit=cover';
+  document.body.classList.toggle('mob', v === 'phone' || (v === 'auto' && narrow.matches));
+}
+narrow.addEventListener('change', () => { if ((prefs.view || 'auto') === 'auto') applyView(); });
 function ensureUi() {
   const ys = Object.keys(S.years).map(Number).sort((a, b) => a - b);
   if (!ys.length) { ui.year = new Date().getFullYear(); return; }
@@ -332,11 +350,16 @@ function renderBackups() {
 }
 function renderMirror() {
   const m = mirror || {};
-  const last = m.time ? new Date(m.time).toLocaleString('he-IL') : 'עדיין לא בסשן הזה';
-  return `<h3>☁ סנכרון וגיבוי ב-Google Drive</h3>
-    <p class="muted">הנתונים נשמרים בכל שינוי בתיקייה <code>${esc(m.dir || 'Google Drive › תקציב שנתי')}</code> ובמכשיר, והמחשב והטלפון עובדים על אותם נתונים. גיבוי נוסף נשמר בתיקיית "גיבויים" בכל הפעלה אחרי 6 שעות, לפני כל שחזור, ובכל התנגשות בין מכשירים. גיבויים לא נמחקים אוטומטית.</p>
-    <p class="muted" data-mirror-state="ok">סנכרון אחרון: ${esc(last)}</p>
+  const t = x => x ? new Date(x).toLocaleString('he-IL') : 'עדיין לא';
+  let h = `<h3>☁ סנכרון וגיבוי</h3>
+    <p class="muted">כל שינוי נשמר במכשיר וב-Google Drive, בתיקייה "תקציב שנתי". המחשב והטלפון עובדים על אותם נתונים, ושינוי במכשיר אחד מופיע בשני תוך כחצי דקה. גיבוי נשמר בתיקיית "גיבויים" כל 6 שעות, לפני כל שחזור ובכל התנגשות בין מכשירים, ולא נמחק אוטומטית.</p>
+    <p class="${m.ok === false ? 'neg' : 'muted'}" data-mirror-state="${m.ok === false ? 'error' : 'ok'}">${m.ok === false ? '⚠ ' + esc(m.error) : 'סנכרון אחרון: ' + esc(t(m.time))}</p>
     <div class="row"><button class="pri" id="mirNow">☁ גבה וסנכרן עכשיו</button><button class="ghost" id="mirOpen">📂 פתח את התיקייה ב-Drive</button></div>`;
+  if (m.localSupported) h += m.localName
+    ? `<p class="muted">גיבוי נוסף לתיקייה במחשב: <code>${esc(m.localName)}</code> (גיבוי אחרון: ${esc(t(m.localTime))}). שם נשמר גם <code>budget-latest.json</code> שתמיד מעודכן.</p>
+       <div class="row"><button class="ghost" id="mirChoose">חבר מחדש / גבה לשם עכשיו</button><button class="ghost" id="mirOff">הפסק לגבות לתיקייה</button></div>`
+    : `<p class="muted">אפשר לשמור כל גיבוי גם בתיקייה במחשב הזה, למשל תיקיית הגיבויים ב-OneDrive.</p><div class="row"><button class="ghost" id="mirChoose">בחר תיקייה במחשב…</button></div>`;
+  return h;
 }
 async function mirrorAction(fn) {
   const r = await fn();
@@ -370,6 +393,8 @@ function renderSettings() {
     <div><button class="ghost" id="bkrefresh">↻ רענן רשימה</button></div>
   </section>
   <section class="box set"><h3>הגדרות</h3>
+    <label class="chk">תצוגה: <select id="viewMode">${[['auto', 'אוטומטית (לפי גודל המסך)'], ['pc', 'תצוגת מחשב'], ['phone', 'תצוגת טלפון']].map(o => `<option value="${o[0]}"${(prefs.view || 'auto') === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}</select></label>
+    <p class="muted" id="updInfo">${(() => { const u = Array.isArray(S.updates) && S.updates.length ? S.updates[S.updates.length - 1] : null; return u ? `עדכון נתונים אחרון: מספר ${u.n}, ${esc(u.date)}${u.note ? ' · ' + esc(u.note) : ''}` : 'עדיין לא בוצע עדכון נתונים ממוספר.'; })()}</p>
     <label class="chk"><input type="checkbox" id="incf" ${S.settings.includeFuture ? 'checked' : ''}> כלול כספים עתידיים (פיקדון שחרור, מענקים צפויים) בחישוב ההון העצמי</label>
     <label class="chk"><input type="checkbox" id="startLast" ${prefs.startLastMonth ? 'checked' : ''}> פתח את האפליקציה בחודש האחרון (במקום בסיכום השנתי)</label>
     <div><button class="ghost" id="newyr">＋ פתח שנה חדשה (מועתקת מהאחרונה)</button></div>
@@ -498,6 +523,7 @@ document.addEventListener('change', e => {
   const el = e.target;
   if (el.id === 'yr') { ui.year = +el.value; render(); return; }
   if (el.id === 'incf') { pushUndo(true); S.settings.includeFuture = el.checked; render(); queueSave(true); return; }
+  if (el.id === 'viewMode') { window.api.setPrefs({ view: el.value }).then(p => { prefs = p; applyView(); render(); setStatus('התצוגה עודכנה ✓'); }); return; }
   if (el.id === 'startLast') { window.api.setPrefs({ startLastMonth: el.checked }).then(p => { prefs = p; setStatus('ההגדרה נשמרה ✓'); }); return; }
   if (!el.dataset || !el.dataset.k) return;
   if (el.tagName === 'SELECT' || el.type === 'checkbox') { pushUndo(true); applyEdit(el); render(); queueSave(true); }
