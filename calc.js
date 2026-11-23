@@ -190,8 +190,12 @@
       rows.push({ k, usd: r2(usdV), dep: r2(dep), gain: gain == null ? null : r2(gain), pct: base ? gain / base * 100 : null, est });
       prev = usdV;
     });
-    const real = rows.filter(r => !r.est);
-    const lastReal = real[real.length - 1] || null;
+    // "Now" = the latest month whose value was really entered: months opened ahead copy the previous value,
+    // so the last row whose value differs from the row before it (whether or not that month has ended).
+    let li = rows.length - 1;
+    while (li > 0 && rows[li].usd === rows[li - 1].usd) li--;
+    const lastReal = rows[li] || null;
+    const real = rows.slice(0, li + 1);
     const depAll = rows.reduce((s, r) => s + r.dep, 0);
     const depReal = real.reduce((s, r) => s + r.dep, 0);
     const gainReal = lastReal && open != null ? lastReal.usd - open - depReal : null;

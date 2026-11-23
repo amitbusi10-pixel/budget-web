@@ -164,6 +164,7 @@ async function init() {
   applyView();
   render();
   if (r.ui && r.ui.y) scrollTo(0, r.ui.y);
+  refreshReminders();
   setStatus(window.__driveOnline && window.__driveOnline() ? 'מחובר ל-Google Drive ✓' : 'עובד מהעותק שבמכשיר');
   window.__onSyncNote = msg => { notice = msg; render(); };
   // Another device saved a newer version: show it (only called when nothing here is waiting to be saved).
@@ -302,7 +303,7 @@ function renderPortfolio(yr) {
   const anyEst = R.some(r => r.est), lr = p.lastReal;
   let h = `<section class="box" data-sec="portfolio"><div class="bh"><h3>תיק אינטראקטיב לאורך השנה</h3><span class="muted">שווי בדולרים${anyEst ? ' · ' + R.filter(r => r.est).map(r => MN[r.k - 1]).join('–') + ' הערכה' : ''}</span></div>
     <div class="kpis">
-      ${kpi(lr ? `שווי עכשיו (${MN[lr.k - 1]})` : 'שווי עכשיו', lr ? usd(lr.usd) : '—', '', 'לפי מה שרשום בחודש', 'p-now')}
+      ${kpi('שווי עכשיו', lr ? usd(lr.usd) : '—', '', 'לפי החודש האחרון שעודכן', 'p-now')}
       ${kpi('שווי בתחילת השנה', p.open == null ? '—' : usd(p.open), '', p.open == null ? 'לא הוזן' : '', 'p-open')}
       ${kpi('הפקדתי השנה', usd(p.depAll), '', `${R.filter(r => r.dep).length} חודשים עם הפקדה`, 'p-dep')}
       ${kpi('תשואה מתחילת השנה', p.gainReal == null ? '—' : I(usd(p.gainReal)), p.gainReal == null ? '' : p.gainReal < 0 ? 'neg' : 'pos', p.pctReal == null ? '' : sp(p.pctReal) + (lr ? ' · עד ' + MN[lr.k - 1] : ''), 'p-gain')}
@@ -418,7 +419,7 @@ function render() {
   showUpdate();
   const main = $('#main');
   if (!loaded) { main.innerHTML = '<section class="box">טוען…</section>'; return; }
-  const nb = notice ? `<div class="banner bad" id="notice">${esc(notice)} <button class="sm" id="noticeX">הבנתי</button></div>` : '';
+  const nb = (notice ? `<div class="banner bad" id="notice">${esc(notice)} <button class="sm" id="noticeX">הבנתי</button></div>` : '') + remBanner();
   if (ui.tab === 'docs') { main.innerHTML = nb + renderDocs(); refreshDocs(); return; }
   if (!Object.keys(S.years).length && ui.tab !== 'settings') { main.innerHTML = nb + emptyView(); return; }
   if (ui.tab === 'summary') main.innerHTML = nb + renderYear();
@@ -427,13 +428,44 @@ function render() {
   updateTotals();
   btns();
 }
+/* ---------- upload reminders: on the 10th the month-end documents (payslip, cards, bank) of the previous month,
+   on the 30th (or the month's last day) the Interactive report of this month. A reminder disappears once a file was
+   uploaded to that month after its date (seen on every device, since it is read from Drive) or "כבר טיפלתי" was pressed. */
+const ymOf = (y, m) => y + "-" + String(m + 1).padStart(2, "0");
+function dueReminders(now) {
+  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate(), out = [];
+  const thr = (yy, mm) => Math.min(30, new Date(yy, mm + 1, 0).getDate());
+  if (d >= 10) { const p = new Date(y, m - 1, 1); out.push({ kind: "docs", ym: ymOf(p.getFullYear(), p.getMonth()), since: new Date(y, m, 10),
+    text: "הגיע הזמן להעלות את מסמכי " + MN[p.getMonth()] + ": תלוש, פירוטי האשראי וקובץ עו״ש" }); }
+  if (d >= thr(y, m)) out.push({ kind: "ib", ym: ymOf(y, m), since: new Date(y, m, thr(y, m)), text: "הגיע הזמן להעלות את דוח אינטראקטיב של " + MN[m] });
+  else if (d < 10) { const p = new Date(y, m - 1, 1); out.push({ kind: "ib", ym: ymOf(p.getFullYear(), p.getMonth()), since: new Date(p.getFullYear(), p.getMonth(), thr(p.getFullYear(), p.getMonth())), text: "הגיע הזמן להעלות את דוח אינטראקטיב של " + MN[p.getMonth()] }); }
+  return out;
+}
+let reminders = [];
+async function refreshReminders() {
+  if (!(window.__driveOnline && window.__driveOnline()) || !window.api.docsList) return;
+  const out = [];
+  for (const r of dueReminders(new Date())) {
+    try { if (localStorage.getItem("rem-" + r.kind + "-" + r.ym)) continue; } catch (e) {}
+    const l = await window.api.docsList(r.ym);
+    if (l.ok && l.files.some(f => f.time >= +r.since)) continue;
+    out.push(r);
+  }
+  const ch = JSON.stringify(out) !== JSON.stringify(reminders); reminders = out; if (ch && loaded) render();
+}
+const remBanner = () => reminders.map((r, i) => `<div class="banner info" data-rem="${i}">🔔 ${esc(r.text)}. <button class="sm pri" data-remgo="${i}">להעלאה</button> <button class="sm" data-remok="${i}">כבר טיפלתי</button></div>`).join("");
+document.addEventListener("click", e => {
+  const g = e.target.closest("[data-remgo]"), o = e.target.closest("[data-remok]");
+  if (g) { docMonth = reminders[+g.dataset.remgo].ym; ui.tab = "docs"; render(); }
+  if (o) { const r = reminders[+o.dataset.remok]; try { localStorage.setItem("rem-" + r.kind + "-" + r.ym, "1"); } catch (x) {} reminders = reminders.filter(x => x !== r); render(); }
+});
 /* ---------- documents for the monthly update (stored in Drive: תקציב שנתי › מסמכים › YYYY-MM) ---------- */
 let docMonth = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })();
 function renderDocs() {
   const opts = []; const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1);
   for (let i = 0; i < 15; i++) { d.setMonth(d.getMonth() - 1); const v = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); opts.push(`<option value="${v}"${v === docMonth ? ' selected' : ''}>${MN[d.getMonth()]} ${d.getFullYear()}</option>`); }
   return `<section class="box set"><h3>📎 מסמכים לעדכון החודשי</h3>
-    <p class="muted">מעלים כאן את מסמכי החודש: תלוש, דוח אינטראקטיב, פירוטי אשראי וקובץ עו"ש. הם נשמרים ב-Google Drive שלך (בתיקייה "תקציב שנתי › מסמכים"), ובעדכון החודשי Claude לוקח אותם משם, ממלא את החודש ובודק כל מספר.</p>
+    <p class="muted">מעלים כאן את מסמכי החודש: ב-10 לחודש תלוש, פירוטי אשראי וקובץ עו"ש של החודש שעבר, וב-30 לחודש דוח אינטראקטיב של החודש עצמו. הם נשמרים ב-Google Drive שלך (בתיקייה "תקציב שנתי › מסמכים"), ובעדכון החודשי Claude לוקח אותם משם, ממלא את החודש ובודק כל מספר.</p>
     <label class="chk">חודש: <select id="docMonth">${opts.join('')}</select></label>
     <div class="row"><label class="pri btnlike">⬆ בחר קבצים להעלאה<input type="file" id="docFiles" multiple accept=".pdf,.xlsx,.xls,.csv,.txt,image/*" hidden></label></div>
     <p class="muted" id="docMsg"></p>
@@ -453,6 +485,7 @@ async function uploadDocs(files) {
     const r = await window.api.docsUpload(docMonth, f);
     if (r.ok) ok++; else { msg.textContent = `⚠ ההעלאה של ${f.name} נכשלה: ${r.error}`; await refreshDocs(); return; }
   }
+  refreshReminders();
   msg.textContent = `✓ הועלו ${ok} קבצים. כשכל המסמכים של החודש כאן, כתוב ל-Claude "העליתי".`;
   refreshDocs();
 }
@@ -704,6 +737,7 @@ async function restoreBackup(name) {
 window.__app = { get S() { return S; }, ui, calc, render, evalExpr, undo, redo, flushSave, refreshBackups, get UNDO() { return UNDO; }, get REDO() { return REDO; }, get dlgOpen() { return !$('#modal').hidden; } };
 
 // On phones the page can be closed without "beforeunload": save as soon as it goes to the background.
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && loaded) refreshReminders(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && loaded) flushSave(); });
 
 /* ---------- start ---------- */

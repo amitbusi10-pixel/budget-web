@@ -277,6 +277,9 @@
         const W = document.documentElement.clientWidth, wide = [...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().width > W + 1 && !e.closest('.box > *, .box')).slice(0, 8);
         document.title = 'W=' + W + ' sw=' + document.documentElement.scrollWidth + ' ' + wide.map(e => e.tagName + '.' + e.className + '#' + e.id + ':' + Math.round(e.getBoundingClientRect().width)).join(' | ');
       }, 1500);
+      const st = new URLSearchParams(location.search).get('selftest'); // automatic check (test/run.js): load the button-by-button test
+      if (st) { out.selftest = st; window.api.selftestDone = r => { window.__selftestResult = r; };
+        await new Promise(res => { const e = document.createElement('script'); e.src = 'test/selftest.js'; e.onload = e.onerror = res; document.head.appendChild(e); }); }
       out.mirror = mirrorInfo(); return out;
     }
     let local = await idb.get('state');
