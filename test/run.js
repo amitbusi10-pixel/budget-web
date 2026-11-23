@@ -152,7 +152,7 @@ async function filesChecks() {
   });
   const html = fs.readFileSync(path.join(WEB, 'index.html'), 'utf8');
   await check('כל הקבצים שהדף טוען קיימים', 'חסר קובץ שהדף צריך, וחלק מהאפליקציה לא יעבוד.', () => {
-    const refs = [...html.matchAll(/(?:src|href)="([^"#:]+)"/g)].map(m => m[1]); const miss = refs.filter(r => !fs.existsSync(path.join(WEB, r)));
+    const refs = [...html.matchAll(/(?:src|href)="([^"#:]+)"/g)].map(m => m[1]); const miss = refs.filter(r => !fs.existsSync(path.join(WEB, r.split("?")[0])));
     must(!miss.length, 'missing: ' + miss.join(', ')); return refs.length + ' קבצים';
   });
   await check('הגדרות האבטחה של הדף מאפשרות רק את Google Drive', 'הגדרות האבטחה של הדף השתנו: או שהחיבור ל-Drive ייחסם, או שהדף פתוח לאתרים אחרים.', () => {
