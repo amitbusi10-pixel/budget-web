@@ -23,8 +23,8 @@ const COLS = {
   future: { t: 'כספים עתידיים (לא נכנסים לחישוב החודשי)', c: '1.3fr 1.3fr 1fr 1.2fr 28px',
     f: [['source', 'מקור'], ['name', 'שם'], ['amount', 'סכום', 'n', '₪'], ['date', 'מועד צפוי']],
     def: () => ({ source: '', name: '', amount: 0, date: '' }) },
-  savings: { t: 'חסכונות', c: '1.4fr 1fr 1fr 1fr 1.2fr 1.4fr 28px',
-    f: [['name', 'שם'], ['kind', 'סוג', 'sel', [['fund', 'קרן'], ['cash', 'יתרה בבנק']]], ['monthly', 'הפקדה חודשית', 'n', '₪'], ['balance', 'יתרה', 'n', '₪'], ['fee', 'דמי ניהול'], ['note', 'הערה']],
+  savings: { t: 'חסכונות', c: '1.5fr .9fr 1fr 1fr 1fr 1.15fr 1.1fr 1.2fr 28px',
+    f: [['name', 'שם'], ['kind', 'סוג', 'sel', [['fund', 'קרן'], ['cash', 'יתרה בבנק']]], ['monthly', 'הפקדה חודשית', 'n', '₪'], ['balance', 'יתרה', 'n', '₪'], ['qgain', 'רווח רבעוני', 'calc'], ['ytd', 'תשואה מתחילת השנה', 'calc'], ['fee', 'דמי ניהול'], ['note', 'הערה']],
     def: () => ({ name: '', kind: 'fund', monthly: null, balance: 0, gain: 0, open: 0, fee: '', note: '' }) },
   investments: { t: 'השקעות ($)', c: '2fr 1fr 28px',
     f: [['name', 'נכס'], ['usd', 'סכום ב-$', 'n', '$']],
@@ -51,7 +51,26 @@ const UNDO = [], REDO = [];
 
 /* ---------- automatic calculations ("like Excel") ---------- */
 // Read-only computed columns.
+// Savings funds: the market gain is entered once a quarter (the quarterly report), and the return since January is computed from it.
+const LRM = '‎', sgn = n => LRM + (n < 0 ? '−' : '+') + fmt(Math.round(Math.abs(n))) + ' ₪';
+function fundYtd(m, i) { // { gain, base } since the start of the year for fund row i of month m (same name in the months before)
+  const s = m.savings[i], yr = S.years[ui.year], k = +ui.tab;
+  if (!s || s.kind === 'cash' || !yr || !(k >= 1)) return null;
+  let gain = 0, dep = 0, open = null;
+  for (let j = 1; j <= k; j++) {
+    const r = ((yr.months[j] || {}).savings || []).find(x => x.name === s.name && x.kind !== 'cash'); if (!r) continue;
+    gain += num(r.gain); dep += num(r.monthly);
+    if (open == null) open = r.open != null && r.open !== '' ? num(r.open) : num(r.balance) - num(r.monthly) - num(r.gain);
+  }
+  return open == null ? null : { gain: r2(gain), base: open + dep };
+}
 const CALC_FIELDS = {
+  qgain: row => !(num(row.gain)) || row.kind === 'cash' ? '' : `<b class="${num(row.gain) < 0 ? 'neg' : 'pos'}">${sgn(num(row.gain))}</b>`,
+  ytd: (row, m, i) => {
+    const y = fundYtd(m, i); if (!y || !y.base || !y.gain && !num(row.gain)) return '';
+    const c = y.gain < 0 ? 'neg' : 'pos', p = y.gain / y.base * 100;
+    return `<b class="${c}">${LRM}${p < 0 ? '−' : '+'}${Math.abs(p).toFixed(1)}%</b><br><span class="${c}">${sgn(y.gain)}</span>`;
+  },
   // Loan: payments left = balance / monthly payment, rounded up.
   left: row => {
     if (row.kind !== 'loan' || row.balance == null || row.balance === '' || !(num(row.monthly) > 0)) return '';
@@ -521,13 +540,17 @@ function updateTotals() {
     if (k === 'fixed' && c.saveDep) t += ` · חיסכון ${money(c.saveDep)} (לא נספר בהוצאות)`;
     if (k === 'transfers' && c.deposits) t += ` · הפקדות ${money(c.deposits)}` + (num(m.rate) ? ` (≈ ${usd(c.deposits / num(m.rate))})` : '');
     if (k === 'savings') t += ` · הפקדה חודשית: ${money(sumArr((m.savings || []).filter(s => s.kind !== 'cash'), x => x.monthly))}`;
+    if (k === 'savings') {
+      const ys = (m.savings || []).map((s, i) => fundYtd(m, i)).filter(Boolean), g = ys.reduce((a, y) => a + y.gain, 0), b = ys.reduce((a, y) => a + y.base, 0);
+      if (ys.some(y => y.gain)) t += ` · רווח מתחילת השנה: ${sgn(g)} (${LRM}${g < 0 ? '−' : '+'}${Math.abs(g / b * 100).toFixed(1)}%)`;
+    }
     if (k === 'fixed' && c.debts) t += ` · יתרת הלוואות: ${money(c.debts)}`;
     e.textContent = t;
   });
   document.querySelectorAll('[data-calc]').forEach(e => {
     const [sec, i, f] = e.dataset.calc.split('|');
     const row = (m[sec] || [])[+i];
-    e.textContent = row ? CALC_FIELDS[f](row, m, +i) : '';
+    e.innerHTML = row ? CALC_FIELDS[f](row, m, +i) : '';
   });
   const s = $('#sum'); if (s) s.innerHTML = monthSummary(m, c);
 }
