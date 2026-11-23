@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>בדיקת האפליקציה</title>
+<style>
+:root{--bg:#f4f6f8;--card:#fff;--ink:#1d2730;--mut:#5f6b76;--line:#e1e6ea;--ok:#1f7a4d;--okbg:#e6f4ec;--bad:#b42318;--badbg:#fdecea;--warn:#8a5a00;--warnbg:#fff4dc;--pri:#1f6f5c}
+@media (prefers-color-scheme:dark){:root{--bg:#12171c;--card:#1b2229;--ink:#e8edf1;--mut:#9aa7b2;--line:#2c353e;--ok:#5fd39a;--okbg:#173327;--bad:#ff8a80;--badbg:#3a1d1b;--warn:#ffcf70;--warnbg:#3a2f14;--pri:#5fc4a8}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 system-ui,"Segoe UI",Arial,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:22px;margin:4px 0 2px}.mut{color:var(--mut);font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}
+#now{font-size:18px;font-weight:600;min-height:28px}
+.bar{height:10px;background:var(--line);border-radius:6px;overflow:hidden;margin:10px 0 6px}.bar i{display:block;height:100%;width:0;background:var(--pri);transition:width .3s}
+.row{display:flex;gap:14px;flex-wrap:wrap;font-size:14px;color:var(--mut)}.row b{color:var(--ink);font-size:16px}
+#big{font-size:20px;font-weight:700;padding:14px 16px;border-radius:12px;margin:12px 0}
+#big.ok{background:var(--okbg);color:var(--ok)}#big.bad{background:var(--badbg);color:var(--bad)}#big.run{background:var(--card);border:1px solid var(--line)}
+h2{font-size:17px;margin:18px 0 6px}
+.it{display:flex;gap:10px;padding:7px 4px;border-bottom:1px solid var(--line);align-items:flex-start}.it:last-child{border:0}
+.ic{width:22px;flex:none;text-align:center;font-weight:700}.ic.pass{color:var(--ok)}.ic.fail{color:var(--bad)}.ic.warn{color:var(--warn)}.ic.skip{color:var(--mut)}.ic.run{color:var(--pri)}
+.tx{flex:1;min-width:0}.tm{color:var(--mut);font-size:12px;flex:none}
+.why{margin-top:6px;padding:8px 10px;border-radius:8px;font-size:15px}.fail .why,.it.fail .why{background:var(--badbg);color:var(--bad)}.it.warn .why{background:var(--warnbg);color:var(--warn)}
+.det{color:var(--mut);font-size:13px;margin-top:3px;overflow-wrap:anywhere}
+details{font-size:12px;color:var(--mut);margin-top:4px}summary{cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:4px 0}
+.filter{display:flex;gap:8px;margin:8px 0}.filter button{font:inherit;font-size:14px;padding:4px 12px;border-radius:20px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}.filter button.on{background:var(--pri);color:#fff;border-color:var(--pri)}
+</style>
+</head>
+<body>
+<main>
+  <h1>🔍 בדיקת אפליקציית התקציב</h1>
+  <div class="mut" id="sub">הבדיקה עוברת על כל חלקי האפליקציה. הנתונים האמיתיים שלך לא משתנים: הכול רץ על עותק, ובמקום Google Drive משמש Drive מדומה.</div>
+  <div id="big" class="run">⏳ מתחיל…</div>
+  <div class="card">
+    <div class="mut">בודק עכשיו</div>
+    <div id="now">—</div>
+    <div class="bar"><i id="prog"></i></div>
+    <div class="row"><span>זמן: <b id="time">0:00</b></span><span>בוצעו: <b id="cnt">0</b></span><span>✓ תקין: <b id="np">0</b></span><span>✗ תקלות: <b id="nf">0</b></span><span>⚠ לתשומת לב: <b id="nw">0</b></span></div>
+  </div>
+  <div class="filter"><button class="on" data-f="all">הכול</button><button data-f="bad">רק תקלות ואזהרות</button></div>
+  <div id="list"></div>
+</main>
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ICON = { pass: '✓', fail: '✗', warn: '⚠', skip: '–', run: '…' };
+let st = { items: [], total: 0, start: 0, end: 0, now: '', groups: [] }, filt = 'all';
+function fmtT(ms) { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+function draw() {
+  const it = st.items, n = k => it.filter(x => x.status === k).length;
+  $('#np').textContent = n('pass'); $('#nf').textContent = n('fail'); $('#nw').textContent = n('warn'); $('#cnt').textContent = it.length;
+  $('#prog').style.width = (st.total ? Math.min(100, it.length / st.total * 100) : 0) + '%';
+  $('#now').textContent = st.end ? 'הבדיקה הסתיימה' : (st.now || '—');
+  const big = $('#big');
+  if (st.end) {
+    big.className = n('fail') ? 'bad' : 'ok';
+    big.textContent = n('fail') ? `✗ נמצאו ${n('fail')} תקלות` + (n('warn') ? ` ו-${n('warn')} דברים לתשומת לב` : '') + '. הפירוט למטה, באדום.' : `✓ הכול תקין. ${n('pass')} בדיקות עברו` + (n('warn') ? `, ויש ${n('warn')} דברים לתשומת לב (בצהוב)` : '') + '.';
+    $('#time').textContent = fmtT(st.end - st.start);
+    $('#sub').textContent = 'הבדיקה רצה ב-' + new Date(st.start).toLocaleString('he-IL') + '. הנתונים האמיתיים לא השתנו.';
+  } else big.className = 'run', big.textContent = '⏳ הבדיקה רצה… אפשר לצפות בה כאן בזמן אמת.';
+  let h = '';
+  for (const g of st.groups) {
+    const rows = it.filter(x => x.group === g && (filt === 'all' || x.status === 'fail' || x.status === 'warn'));
+    if (!rows.length) continue;
+    h += `<h2>${esc(g)}</h2><div class="card">` + rows.map(x => `<div class="it ${x.status}"><span class="ic ${x.status}">${ICON[x.status]}</span><div class="tx">${esc(x.name)}`
+      + (x.detail ? `<div class="det">${esc(x.detail)}</div>` : '')
+      + ((x.status === 'fail' || x.status === 'warn') && x.why ? `<div class="why">${x.status === 'fail' ? 'מה זה אומר: ' : ''}${esc(x.why)}</div>` : '')
+      + (x.tech ? `<details><summary>פרטים טכניים (בשביל Claude)</summary><pre>${esc(x.tech)}</pre></details>` : '')
+      + `</div><span class="tm">${x.ms != null ? (x.ms / 1000).toFixed(1) + ' שנ׳' : ''}</span></div>`).join('') + '</div>';
+  }
+  $('#list').innerHTML = h;
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-f]'); if (!b) return; filt = b.dataset.f; document.querySelectorAll('[data-f]').forEach(x => x.classList.toggle('on', x === b)); draw(); });
+function onEv(e) {
+  if (e.type === 'begin') { st.start = e.time; st.total = e.total; }
+  if (e.type === 'group' && !st.groups.includes(e.group)) st.groups.push(e.group);
+  if (e.type === 'now') st.now = e.name;
+  if (e.type === 'result') { st.items.push(e); if (!st.groups.includes(e.group)) st.groups.push(e.group); }
+  if (e.type === 'total') st.total = e.total;
+  if (e.type === 'end') st.end = e.time;
+}
+setInterval(() => { if (st.start && !st.end) $('#time').textContent = fmtT(Date.now() - st.start); }, 500);
+if (window.__FINAL) { window.__FINAL.forEach(onEv); draw(); }
+else {
+  const es = new EventSource('events');
+  es.onmessage = m => { onEv(JSON.parse(m.data)); draw(); };
+  es.onerror = () => { if (st.end) es.close(); };
+}
+draw();
+</script>
+</body>
+</html>

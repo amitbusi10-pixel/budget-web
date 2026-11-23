@@ -162,7 +162,7 @@
     const same = tag ? null : await findOne(name, bkId);
     await upload(same ? { name } : { name, parents: [bkId] }, text, same && same.id);
     await writeLocal(name, text);
-    lastBackup = Date.now(); ls.set('budget-lastbk', String(lastBackup));
+    if (!tag) { lastBackup = Date.now(); ls.set('budget-lastbk', String(lastBackup)); } // a tagged backup does not replace the daily one
     pruneBackups().catch(() => {});
     return name;
   }

@@ -9,7 +9,7 @@ const MN = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'י�
 const UNDO_LIMIT = 200;
 const COLS = {
   fixed: { t: 'הוצאות קבועות והלוואות', c: '110px 1.3fr 1.2fr 1fr 1fr 1fr 1fr 82px 1fr 28px',
-    f: [['kind', 'סוג', 'sel', [['standing', 'הוראת קבע'], ['loan', 'הלוואה']]], ['name', 'שם'], ['desc', 'תיאור'], ['orig', 'סכום מקורי', 'n', '₪'], ['count', 'מס׳ תשלומים', 'n'], ['balance', 'יתרה', 'n', '₪'], ['monthly', 'חיוב חודשי', 'n', '₪'], ['left', 'נותרו', 'calc'], ['day', 'תאריך חיוב']],
+    f: [['kind', 'סוג', 'sel', [['standing', 'הוראת קבע'], ['loan', 'הלוואה'], ['saving', 'חיסכון']]], ['name', 'שם'], ['desc', 'תיאור'], ['orig', 'סכום מקורי', 'n', '₪'], ['count', 'מס׳ תשלומים', 'n'], ['balance', 'יתרה', 'n', '₪'], ['monthly', 'חיוב חודשי', 'n', '₪'], ['left', 'נותרו', 'calc'], ['day', 'תאריך חיוב']],
     def: () => ({ kind: 'standing', name: '', desc: '', orig: null, count: null, balance: null, monthly: 0, day: '' }) },
   cards: { t: 'כרטיסי אשראי', c: '1.2fr 1fr 1fr 1.6fr 28px',
     f: [['name', 'כרטיס'], ['amount', 'סכום', 'n', '₪'], ['date', 'תאריך'], ['note', 'הערה']],
@@ -224,7 +224,7 @@ function monthSummary(m, c) {
   if (c.remainExt < 0) h += `<div class="banner bad">החודש במינוס: ${money(c.remainExt)} אחרי הפקדות לשוק ההון</div>`;
   else if (c.netExt < 0) h += `<div class="banner warn">ההוצאות גבוהות מההכנסות ב-${money(-c.netExt)}</div>`;
   const incSub = c.internal ? `לא כולל העברה פנימית ${money(c.internal)}` : '';
-  const depSub = `אחרי הפקדה ${money(c.depNet)}` + (c.internal && c.deposits ? ` (${money(c.deposits)} פחות העברה פנימית)` : '');
+  const depSub = `אחרי הפקדה ${money(c.depNet)}` + (c.internal && c.deposits ? ` (${money(c.deposits)} פחות העברה פנימית)` : '') + (c.saveDep ? ` · חיסכון ${money(c.saveDep)}` : '');
   h += `<div class="kpis k8">${kpi('הכנסות', money(c.incomeExt), '', incSub, 'income')}${kpi('הוצאות', money(c.totalExp), '', `קבועות ${money(c.fixed)} · אשראי ${money(c.cards)} · העברות ${money(c.trReg)}`, 'totalExp')}${kpi('נשאר בנטו', money(c.netExt), c.netExt < 0 ? 'neg' : 'pos', '', 'net')}${kpi('נשאר בפועל', money(c.remainExt), c.remainExt < 0 ? 'neg' : 'pos', depSub, 'remain')}${kpi('שווי תיק', money(c.portILS), '', usd(c.usdT), 'portILS')}${kpi('חובות', money(c.debts), '', '', 'debts')}${kpi('חסכונות', money(c.savings), '', '', 'savings')}${kpi('הון עצמי', money(c.equity), 'pos', S.settings.includeFuture ? 'כולל כספים עתידיים' : c.futureInEquity ? 'חסכונות + השקעות נטו + פיקדון' : 'חסכונות + השקעות נטו', 'equity')}</div>`;
   return h;
 }
@@ -460,6 +460,7 @@ document.addEventListener("click", e => {
   if (o) { const r = reminders[+o.dataset.remok]; try { localStorage.setItem("rem-" + r.kind + "-" + r.ym, "1"); } catch (x) {} reminders = reminders.filter(x => x !== r); render(); }
 });
 /* ---------- documents for the monthly update (stored in Drive: תקציב שנתי › מסמכים › YYYY-MM) ---------- */
+let docNote = ''; // last upload message (kept when the screen is redrawn)
 let docMonth = (() => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })();
 function renderDocs() {
   const opts = []; const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() + 1);
@@ -468,7 +469,7 @@ function renderDocs() {
     <p class="muted">מעלים כאן את מסמכי החודש: ב-10 לחודש תלוש, פירוטי אשראי וקובץ עו"ש של החודש שעבר, וב-30 לחודש דוח אינטראקטיב של החודש עצמו. הם נשמרים ב-Google Drive שלך (בתיקייה "תקציב שנתי › מסמכים"), ובעדכון החודשי Claude לוקח אותם משם, ממלא את החודש ובודק כל מספר.</p>
     <label class="chk">חודש: <select id="docMonth">${opts.join('')}</select></label>
     <div class="row"><label class="pri btnlike">⬆ בחר קבצים להעלאה<input type="file" id="docFiles" multiple accept=".pdf,.xlsx,.xls,.csv,.txt,image/*" hidden></label></div>
-    <p class="muted" id="docMsg"></p>
+    <p class="muted" id="docMsg">${esc(docNote)}</p>
     <div id="doclist"><p class="muted">טוען…</p></div></section>`;
 }
 async function refreshDocs() {
@@ -479,18 +480,18 @@ async function refreshDocs() {
     : '<p class="muted">עדיין לא הועלו מסמכים לחודש הזה.</p>';
 }
 async function uploadDocs(files) {
-  const msg = $('#docMsg'); let ok = 0;
+  let ok = 0;
   for (const [i, f] of [...files].entries()) {
-    msg.textContent = `מעלה ${i + 1} מתוך ${files.length}: ${f.name}…`;
+    docNote = `מעלה ${i + 1} מתוך ${files.length}: ${f.name}…`; { const m2 = $('#docMsg'); if (m2) m2.textContent = docNote; }
     const r = await window.api.docsUpload(docMonth, f);
-    if (r.ok) ok++; else { msg.textContent = `⚠ ההעלאה של ${f.name} נכשלה: ${r.error}`; await refreshDocs(); return; }
+    if (r.ok) ok++; else { docNote = `⚠ ההעלאה של ${f.name} נכשלה: ${r.error}`; const m2 = $('#docMsg'); if (m2) m2.textContent = docNote; await refreshDocs(); return; }
   }
-  refreshReminders();
-  msg.textContent = `✓ הועלו ${ok} קבצים. כשכל המסמכים של החודש כאן, כתוב ל-Claude "העליתי".`;
-  refreshDocs();
+  docNote = `✓ הועלו ${ok} קבצים. כשכל המסמכים של החודש כאן, כתוב ל-Claude "העליתי".`;
+  const m2 = $('#docMsg'); if (m2) m2.textContent = docNote;
+  refreshDocs(); refreshReminders();
 }
 document.addEventListener('change', e => {
-  if (e.target.id === 'docMonth') { docMonth = e.target.value; $('#docMsg').textContent = ''; refreshDocs(); }
+  if (e.target.id === 'docMonth') { docMonth = e.target.value; docNote = ''; $('#docMsg').textContent = ''; refreshDocs(); }
   if (e.target.id === 'docFiles' && e.target.files.length) { uploadDocs(e.target.files); e.target.value = ''; }
 });
 document.addEventListener('click', async e => {
@@ -517,6 +518,7 @@ function updateTotals() {
     if (!(k in vals)) return;
     let t = 'סה״כ: ' + (k === 'investments' ? usd(vals[k]) : money(vals[k]));
     if (k === 'income' && c.internal) t += ` (+ העברה פנימית ${money(c.internal)})`;
+    if (k === 'fixed' && c.saveDep) t += ` · חיסכון ${money(c.saveDep)} (לא נספר בהוצאות)`;
     if (k === 'transfers' && c.deposits) t += ` · הפקדות ${money(c.deposits)}` + (num(m.rate) ? ` (≈ ${usd(c.deposits / num(m.rate))})` : '');
     if (k === 'savings') t += ` · הפקדה חודשית: ${money(sumArr((m.savings || []).filter(s => s.kind !== 'cash'), x => x.monthly))}`;
     if (k === 'fixed' && c.debts) t += ` · יתרת הלוואות: ${money(c.debts)}`;

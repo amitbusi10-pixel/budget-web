@@ -12,10 +12,13 @@
   function calc(m, includeFuture) {
     const tr = m.transfers || [];
     const reg = tr.filter(t => t.cat !== 'deposit'), dep = tr.filter(t => t.cat === 'deposit');
-    const fixed = sumArr(m.fixed, x => x.monthly), cards = sumArr(m.cards, x => x.amount);
+    // A fixed row of kind 'saving' (e.g. a monthly transfer to an investment fund) is still the user's money:
+    // it is not an expense, but it did leave the bank, so it is taken off "נשאר בפועל" like a deposit.
+    const saveDep = sumArr((m.fixed || []).filter(x => x.kind === 'saving'), x => x.monthly);
+    const fixed = sumArr((m.fixed || []).filter(x => x.kind !== 'saving'), x => x.monthly), cards = sumArr(m.cards, x => x.amount);
     const trReg = sumArr(reg, x => x.amount), deposits = sumArr(dep, x => x.amount);
     const income = sumArr(m.income, x => x.amount), future = sumArr(m.future, x => x.amount);
-    const totalExp = fixed + cards + trReg, net = income - totalExp, remain = net - deposits;
+    const totalExp = fixed + cards + trReg, net = income - totalExp, remain = net - deposits - saveDep;
     const usdT = sumArr(m.investments, x => x.usd), portILS = usdT * num(m.rate);
     const debts = sumArr((m.fixed || []).filter(f => f.kind === 'loan'), x => x.balance), netInv = portILS - debts;
     const savings = sumArr(m.savings, x => x.balance), cash = sumArr((m.savings || []).filter(s => s.kind === 'cash'), x => x.balance);
@@ -28,9 +31,9 @@
     const incomeExt = income - internal;
     const depNet = Math.max(0, deposits - internal);
     const netExt = incomeExt - totalExp;
-    const remainExt = netExt - depNet;
+    const remainExt = netExt - depNet - saveDep;
     return { fixed, cards, trReg, deposits, income, future, totalExp, net, remain, usdT, portILS, debts, netInv, savings, cash, equity,
-      monthlyFunds: sumArr(m.savings, x => x.monthly), internal, incomeExt, depNet, netExt, remainExt, futureInEquity };
+      monthlyFunds: sumArr(m.savings, x => x.monthly), saveDep, internal, incomeExt, depNet, netExt, remainExt, futureInEquity };
   }
 
   function emptyMonth() {
@@ -162,7 +165,7 @@
     const open = openGiven ? num(yr.openUsd) : (first.c.usdT - first.dep / (num(first.m.rate) || 1));
     const gainUsd = last.c.usdT - open - depUsd;
     return { act, empty: false, tInc, tExp, tNet, tDep, depUsd, open, openGiven, gainUsd, first, last,
-      tRemain: tNet - tDep, e0: first.c.equity, e1: last.c.equity };
+      tSave: sum(x => x.c.saveDep), tRemain: tNet - tDep - sum(x => x.c.saveDep), e0: first.c.equity, e1: last.c.equity };
   }
 
   // The Interactive portfolio month by month (dollars): value, deposits, and the market return of each month

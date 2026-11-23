@@ -1,5 +1,5 @@
 ﻿// Offline shell: the app files are cached; data calls to Google always go to the network.
-const V = 'budget-web-v5';
+const V = 'budget-web-v6';
 const FILES = ['./', 'index.html', 'app.js', 'calc.js', 'web-api.js', 'styles.css', 'web.css', 'manifest.json', 'register-sw.js', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== V).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
