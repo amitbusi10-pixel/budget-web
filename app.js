@@ -466,6 +466,8 @@ async function refreshReminders() {
   const out = [];
   for (const r of dueReminders(new Date())) {
     try { if (localStorage.getItem("rem-" + r.kind + "-" + r.ym)) continue; } catch (e) {}
+    // a monthly data update logged after the reminder date means that month's documents were already handled
+    if ((S.updates || []).some(u => { const p = String(u.date || "").split(".").map(Number); return p.length === 3 && +new Date(2000 + p[2], p[1] - 1, p[0]) >= +r.since; })) continue;
     const l = await window.api.docsList(r.ym);
     if (l.ok && l.files.some(f => f.time >= +r.since)) continue;
     out.push(r);

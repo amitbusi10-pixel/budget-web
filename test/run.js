@@ -472,6 +472,11 @@ async function driveChecks(dataText) {
       await P.eval(`refreshReminders()`); await P.eval(`__t.tab('summary')`); must(await P.eval(`__t.qa('[data-rem]').length`) === due.length, 'banners'); return due.map(r => r.text).join(' · ');
     });
     else await check('תזכורת להעלאת מסמכים מוצגת בזמן', '', () => ({ skip: 'היום אין תזכורת פעילה (לפני ה-10 בחודש)' }));
+    await check('אין תזכורת למסמכים אם כבר נרשם עדכון נתונים אחרי המועד', 'התזכורת מוצגת גם כשהחודש כבר עודכן (כמו אוקטובר, שעודכן ב-17.11), וזו תזכורת שגויה.', async () => {
+      if (!due.some(r => r.kind === 'docs')) return { skip: 'אין תזכורת מסמכים היום' };
+      const n = await P.eval(`(async () => { const old = S.updates, d = new Date(); S.updates = [{ n: 1, date: String(d.getDate()).padStart(2, '0') + '.' + String(d.getMonth() + 1).padStart(2, '0') + '.' + String(d.getFullYear() % 100), note: 'x' }]; await refreshReminders(); const c = reminders.filter(r => r.kind === 'docs').length; S.updates = old; await refreshReminders(); return c; })()`);
+      must(n === 0, 'התזכורת הופיעה אף שנרשם עדכון');
+    });
     await check('הכפתור "להעלאה" פותח את המסמכים בחודש הנכון', 'הכפתור בתזכורת לא מוביל למקום הנכון.', async () => {
       if (!due.length) return { skip: 'אין תזכורת היום' };
       await P.eval(`__t.click('[data-remgo="0"]')`); await sleep(300); eqJ(await P.eval(`[__app.ui.tab, document.querySelector('#docMonth').value]`), ['docs', ym], 'tab/month');
